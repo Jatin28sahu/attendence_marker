@@ -1,0 +1,5 @@
+insightface==0.7.3
+opencv-python-headless==4.10.0.84
+onnxruntime==1.19.2
+numpy==2.1.1
+pandas==2.2.2

@@ -1,0 +1,47 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+.python-version
+.pytest_cache/
+
+# --- Virtual envs ---
+.venv/
+venv/
+env/
+ENV/
+
+# --- Notebooks ---
+.ipynb_checkpoints/
+
+# --- OS / IDE ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.code-workspace
+
+# --- Logs & misc ---
+*.log
+.env
+.env.*
+
+# --- Project data (keep folders, ignore contents) ---
+# Enrollment data / outputs / local media should not be versioned.
+#data/**
+#!data/.gitkeep
+
+#out/**
+#!out/.gitkeep
+
+#faces/**
+#!faces/.gitkeep
+
+#photos/**
+#!photos/.gitkeep
