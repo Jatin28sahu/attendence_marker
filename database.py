@@ -19,17 +19,24 @@ def init_db():
     conn = sqlite3.connect('attendance.db')
     c = conn.cursor()
     
-    # Create students table
-    c.execute('''CREATE TABLE IF NOT EXISTS students
-                 (name TEXT, class_name TEXT, section TEXT, subject TEXT,
-                  face_path TEXT, embedding BLOB)''')
-    
-    # Drop existing attendance table if exists to avoid schema conflicts
+    # Drop existing tables to update schema
+    c.execute('DROP TABLE IF EXISTS students')
     c.execute('DROP TABLE IF EXISTS attendance')
     
-    # Create attendance table with correct schema
+    # Create students table with roll_no as primary key
+    c.execute('''CREATE TABLE IF NOT EXISTS students
+                 (roll_no TEXT PRIMARY KEY,
+                  name TEXT,
+                  class_name TEXT,
+                  section TEXT,
+                  subject TEXT,
+                  face_path TEXT,
+                  embedding BLOB)''')
+    
+    # Create attendance table with roll_no reference
     c.execute('''CREATE TABLE IF NOT EXISTS attendance
-                 (student_name TEXT,
+                 (roll_no TEXT,
+                  student_name TEXT,
                   class_name TEXT,
                   section TEXT,
                   subject TEXT,
@@ -56,7 +63,7 @@ def convert_array(blob):
 sqlite3.register_adapter(np.ndarray, adapt_array)
 sqlite3.register_converter("BLOB", convert_array)
 
-def save_student(name, class_name, section, subject, face_path, face_encoding):
+def save_student(roll_no, name, class_name, section, subject, face_path, face_encoding):
     # Ensure face_encoding is float32 and normalized before saving
     face_encoding = np.array(face_encoding, dtype=np.float32)
     face_encoding = l2_normalize(face_encoding)
@@ -66,21 +73,21 @@ def save_student(name, class_name, section, subject, face_path, face_encoding):
         cur = conn.cursor()
         cur.execute('''
             INSERT OR REPLACE INTO students 
-            (name, class_name, section, subject, face_path, embedding)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (name, class_name, section, subject, face_path, face_encoding))
+            (roll_no, name, class_name, section, subject, face_path, embedding)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (roll_no, name, class_name, section, subject, face_path, face_encoding))
         conn.commit()
     finally:
         conn.close()
 
-def save_attendance(student_name, class_name, section, subject, similarity_score, date, time):
+def save_attendance(roll_no, student_name, class_name, section, subject, similarity_score, date, time):
     conn = sqlite3.connect('attendance.db')
     c = conn.cursor()
     
     c.execute('''INSERT INTO attendance 
-                 (student_name, class_name, section, subject, similarity_score, date, time)
-                 VALUES (?, ?, ?, ?, ?, ?, ?)''',
-              (student_name, class_name, section, subject, similarity_score, date, time))
+                 (roll_no, student_name, class_name, section, subject, similarity_score, date, time)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+              (roll_no, student_name, class_name, section, subject, similarity_score, date, time))
     
     conn.commit()
     conn.close()
@@ -91,14 +98,14 @@ def get_students(class_name, section, subject=None):
         cur = conn.cursor()
         if subject:
             query = '''
-                SELECT name, embedding 
+                SELECT roll_no, name, embedding 
                 FROM students 
                 WHERE class_name=? AND section=? AND subject=?
             '''
             params = (class_name, section, subject)
         else:
             query = '''
-                SELECT name, embedding 
+                SELECT roll_no, name, embedding 
                 FROM students 
                 WHERE class_name=? AND section=?
             '''
@@ -107,22 +114,23 @@ def get_students(class_name, section, subject=None):
         cur.execute(query, params)
         rows = cur.fetchall()
         # Ensure embeddings are properly normalized when retrieved
-        names = [row[0] for row in rows]
-        encodings = [l2_normalize(row[1]) for row in rows]
-        return names, encodings
+        roll_nos = [row[0] for row in rows]
+        names = [row[1] for row in rows]
+        encodings = [l2_normalize(row[2]) for row in rows]
+        return roll_nos, names, encodings
     finally:
         conn.close()
 
-def delete_student_by_name(student_name):
+def delete_student_by_roll_no(roll_no):
     conn = get_db()
     try:
         cur = conn.cursor()
         # Delete from students table
-        cur.execute('DELETE FROM students WHERE name = ?', (student_name,))
+        cur.execute('DELETE FROM students WHERE roll_no = ?', (roll_no,))
         students_deleted = cur.rowcount
         
         # Delete from attendance table
-        cur.execute('DELETE FROM attendance WHERE student_name = ?', (student_name,))
+        cur.execute('DELETE FROM attendance WHERE roll_no = ?', (roll_no,))
         attendance_deleted = cur.rowcount
         
         conn.commit()
@@ -131,26 +139,35 @@ def delete_student_by_name(student_name):
     finally:
         conn.close()
         
-def delete_class_data(class_name, section=None):
+def delete_class_data(class_name, section=None, subject=None):
     conn = get_db()
     try:
         cur = conn.cursor()
-        if section:
-            # Delete from students table with class and section
+        
+        # Build query based on provided parameters
+        if section and subject:
+            # Delete with class, section, and subject
+            cur.execute('DELETE FROM students WHERE class_name = ? AND section = ? AND subject = ?', 
+                       (class_name, section, subject))
+            students_deleted = cur.rowcount
+            
+            cur.execute('DELETE FROM attendance WHERE class_name = ? AND section = ? AND subject = ?', 
+                       (class_name, section, subject))
+            attendance_deleted = cur.rowcount
+        elif section:
+            # Delete with class and section only
             cur.execute('DELETE FROM students WHERE class_name = ? AND section = ?', 
                        (class_name, section))
             students_deleted = cur.rowcount
             
-            # Delete from attendance table with class and section
             cur.execute('DELETE FROM attendance WHERE class_name = ? AND section = ?', 
                        (class_name, section))
             attendance_deleted = cur.rowcount
         else:
-            # Delete from students table with just class
+            # Delete with just class
             cur.execute('DELETE FROM students WHERE class_name = ?', (class_name,))
             students_deleted = cur.rowcount
             
-            # Delete from attendance table with just class
             cur.execute('DELETE FROM attendance WHERE class_name = ?', (class_name,))
             attendance_deleted = cur.rowcount
             

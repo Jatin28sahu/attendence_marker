@@ -6,7 +6,7 @@ import os
 from insightface.app import FaceAnalysis
 import cv2
 import numpy as np
-from database import init_db, save_student, get_students, save_attendance ,delete_student_by_name,delete_class_data
+from database import init_db, save_student, get_students, save_attendance, delete_student_by_roll_no, delete_class_data
 from utils import l2_normalize
 import tempfile
 import zipfile
@@ -69,6 +69,15 @@ async def enroll_students(
         full_student_path = os.path.join(class_dir, student_dir)
         if not os.path.isdir(full_student_path):
             continue
+        
+        # Parse roll_no and name from folder name (format: 21045001_aman_meena)
+        parts = student_dir.split('_', 1)
+        if len(parts) < 2:
+            # Skip if folder name doesn't match expected format
+            continue
+        
+        roll_no = parts[0]
+        name = parts[1]
             
         emb_list = []
         # Use full path when listing files
@@ -93,8 +102,8 @@ async def enroll_students(
             # Ensure proper stacking and normalization of embeddings
             emb_stack = np.stack([np.array(e, dtype=np.float32) for e in emb_list], axis=0)
             mean_emb = l2_normalize(np.mean(emb_stack, axis=0))
-            save_student(student_dir, class_name, section, subject, full_student_path, mean_emb)
-            enrolled.append(student_dir)
+            save_student(roll_no, name, class_name, section, subject, full_student_path, mean_emb)
+            enrolled.append({"roll_no": roll_no, "name": name})
     
     # Cleanup temp directory
     shutil.rmtree(temp_dir)
@@ -138,7 +147,7 @@ async def mark_attendance_endpoint(
         zip_ref.extractall(photos_dir)
     
     # Get enrolled students for this class/section
-    names, known_encodings = get_students(class_name, section, subject)
+    roll_nos, names, known_encodings = get_students(class_name, section, subject)
     
 
 
@@ -168,9 +177,11 @@ async def mark_attendance_endpoint(
                     best_score = scores[best_idx]
                     
                     if best_score >= threshold:
+                        roll_no = roll_nos[best_idx]
                         student_name = names[best_idx]
-                        if student_name not in already_marked:
+                        if roll_no not in already_marked:
                             marked.append({
+                                "roll_no": roll_no,
                                 "name": student_name,
                                 "similarity": float(best_score)
                             })
@@ -179,15 +190,15 @@ async def mark_attendance_endpoint(
                             crops_dir, timestamp = get_attendance_crop_path(class_name, section, subject)
                             bbox = f.bbox.astype(int)
                             face_crop = img[bbox[1]:bbox[3], bbox[0]:bbox[2]]
-                            crop_filename = f"{student_name}_{timestamp}.jpg"
+                            crop_filename = f"{roll_no}_{student_name}_{timestamp}.jpg"
                             crop_path = os.path.join(crops_dir, crop_filename)
                             cv2.imwrite(crop_path, face_crop)
                             
                             # Get current date and time for attendance
                             dt = get_current_datetime()
-                            save_attendance(student_name, class_name, section, subject, float(best_score), dt['date'], dt['time'])
+                            save_attendance(roll_no, student_name, class_name, section, subject, float(best_score), dt['date'], dt['time'])
                             
-                            already_marked.add(student_name)
+                            already_marked.add(roll_no)
 
     # Cleanup
     shutil.rmtree(temp_dir)
@@ -197,28 +208,16 @@ async def mark_attendance_endpoint(
 
 @app.delete("/delete-student/")
 async def delete_student(
-    student_name: str,
-    class_name: str,
-    section: Optional[str] = None
+    roll_no: str
 ):
-    # Get student data
-    if section:
-        names, _ = get_students(class_name, section)
-    else:
-        names, _ = get_students(class_name, None)
-    
-    # Check if student exists
-    if student_name not in names:
-        return {"error": "Student not found"}
-    
-    # Delete student
-    success = delete_student_by_name(student_name)
+    # Delete student by roll number
+    success = delete_student_by_roll_no(roll_no)
     print(f"Delete operation result: {success}")  # Debug print
     
     if success:
-        return {"message": f"Student {student_name} deleted successfully"}
+        return {"message": f"Student with roll number {roll_no} deleted successfully"}
     else:
-        return {"error": "Failed to delete student"}
+        return {"error": "Student not found"}
 
 @app.delete("/delete-class/")
 async def delete_class(
@@ -226,8 +225,8 @@ async def delete_class(
     section: Optional[str] = None,
     subject: Optional[str] = None
 ):
-    # Delete class data
-    success = delete_class_data(class_name, section)
+    # Delete class data with optional subject parameter
+    success = delete_class_data(class_name, section, subject)
     
     if success:
         message = f"Deleted data for class {class_name}"
