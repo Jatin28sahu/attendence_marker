@@ -16,14 +16,13 @@ def get_db():
     return sqlite3.connect(DB_PATH, detect_types=sqlite3.PARSE_DECLTYPES)
 
 def init_db():
+    """Initialize database tables if they don't exist. Does NOT drop existing data."""
     conn = sqlite3.connect('attendance.db')
     c = conn.cursor()
     
-    # Drop existing tables to update schema
-    c.execute('DROP TABLE IF EXISTS students')
-    c.execute('DROP TABLE IF EXISTS attendance')
-    
-    # Create students table with roll_no as primary key
+    # Create students table with roll_no as primary key (only if not exists)
+    # roll_no is the primary key to ensure uniqueness across all classes
+    # Note: If you need the same roll_no in different classes, consider changing this
     c.execute('''CREATE TABLE IF NOT EXISTS students
                  (roll_no TEXT PRIMARY KEY,
                   name TEXT,
@@ -33,9 +32,11 @@ def init_db():
                   face_path TEXT,
                   embedding BLOB)''')
     
-    # Create attendance table with roll_no reference
+    # Create attendance table with roll_no reference (only if not exists)
+    # No unique constraint here to allow multiple attendance records per student
     c.execute('''CREATE TABLE IF NOT EXISTS attendance
-                 (roll_no TEXT,
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  roll_no TEXT,
                   student_name TEXT,
                   class_name TEXT,
                   section TEXT,
@@ -43,6 +44,13 @@ def init_db():
                   similarity_score REAL,
                   date TEXT,
                   time TEXT)''')
+    
+    # Create index on attendance table for faster queries
+    c.execute('''CREATE INDEX IF NOT EXISTS idx_attendance_roll_no 
+                 ON attendance(roll_no)''')
+    
+    c.execute('''CREATE INDEX IF NOT EXISTS idx_attendance_class 
+                 ON attendance(class_name, section, date)''')
     
     conn.commit()
     conn.close()
@@ -177,5 +185,4 @@ def delete_class_data(class_name, section=None, subject=None):
     finally:
         conn.close()
 
-# Initialize database when module is imported
-init_db()
+# Database will be initialized when app starts, not on module import

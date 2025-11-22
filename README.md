@@ -19,17 +19,29 @@ This system allows you to:
 - **Flexible Deletion**: Delete students by roll number or entire class data with optional filters
 - **CLI Testing Tool**: Test database operations without running the web server
 
-## Recent Updates
+## Recent Updates (November 2025)
+
+### Critical Bug Fixes ✅
+1. **Database Persistence Issue Fixed**: Database no longer resets on multiple uploads or server restarts
+2. **Roll Number Validation**: Added proper validation for folder names during enrollment
+3. **Duplicate Detection**: System now detects and prevents duplicate roll numbers within same upload
+4. **Enhanced Logging**: Comprehensive logging added for debugging enrollment issues
 
 ### Database Schema Changes
 - **Roll Number as Primary Key**: Students are now identified by roll numbers instead of names
-- **Enhanced Attendance Table**: Stores both roll number and student name
+- **Enhanced Attendance Table**: Stores both roll number and student name with auto-increment ID
+- **Database Indexes**: Added indexes for faster queries on attendance records
 - **Subject Support**: Optional subject parameter for better organization
+- **Data Persistence**: Database now persists across server restarts and multiple uploads
 
 ### API Changes
 1. **Enrollment (`POST /enroll/`)**: 
    - Now parses roll number from folder names (format: `{roll_no}_{name}`)
    - Example: `21045001_aman_meena`
+   - **NEW**: Returns detailed information about skipped students
+   - **NEW**: Validates roll numbers (alphanumeric, hyphens, underscores only)
+   - **NEW**: Detects duplicate roll numbers within upload
+   - **NEW**: Returns image processing statistics
 
 2. **Delete Student (`DELETE /delete-student/`)**:
    - Changed from `student_name` parameter to `roll_no`
@@ -109,12 +121,35 @@ faces.zip
 ```json
 {
   "enrolled_students": [
-    {"roll_no": "21045001", "name": "aman_meena"},
-    {"roll_no": "21045002", "name": "ambuj_yadav"},
-    {"roll_no": "21045003", "name": "avinash_sharma"}
+    {
+      "roll_no": "21045001", 
+      "name": "aman_meena",
+      "images_processed": 5
+    },
+    {
+      "roll_no": "21045002", 
+      "name": "ambuj_yadav",
+      "images_processed": 3
+    },
+    {
+      "roll_no": "21045003", 
+      "name": "avinash_sharma",
+      "images_processed": 4
+    }
+  ],
+  "skipped": [
+    {
+      "folder": "invalid_folder_name",
+      "reason": "Invalid folder name format"
+    }
   ]
 }
 ```
+
+**Note:** The API now returns:
+- Number of images successfully processed per student
+- List of skipped folders with reasons (if any)
+- Detailed logging in server console for debugging
 
 ##### 2. Mark Attendance
 ```http
